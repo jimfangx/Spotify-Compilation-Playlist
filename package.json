@@ -4,8 +4,11 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "node --check index.js",
     "start": "node index.js"
+  },
+  "engines": {
+    "node": "24.x"
   },
   "repository": {
     "type": "git",
@@ -18,12 +21,9 @@
   },
   "homepage": "https://github.com/AirFusion45/Spotify-Compilation-Playlist#readme",
   "dependencies": {
-    "axios": "^0.27.2",
-    "cookie-parser": "^1.4.6",
-    "cors": "^2.8.5",
-    "dotenv": "^16.0.3",
-    "express": "^4.18.1",
-    "mongodb": "^4.7.0",
-    "qs": "^6.10.5"
+    "cookie-parser": "^1.4.7",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "mongodb": "^7.4.0"
   }
 }

@@ -5,3 +5,5 @@ node_modules
 tracks.json
 
 auth.json
+
+app.deploy.yaml
