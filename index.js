@@ -415,6 +415,10 @@ app.get('/healthz', (req, res) => {
   res.json({ ok: true });
 });
 
+app.get('/status', (req, res) => {
+  res.json({ ok: true });
+});
+
 app.get('/login', handleRoute(async (req, res) => {
   ensureConfig(['SPOTIFY_CLIENT_ID', 'SPOTIFY_REDIRECT_URI']);
 
@@ -475,6 +479,16 @@ app.post('/cron/update', requireCronSecret, handleRoute(async (req, res) => {
 }));
 
 app.get('/cron/update', requireCronSecret, handleRoute(async (req, res) => {
+  const result = await updateCompilationPlaylist();
+  res.json({ ok: true, ...result });
+}));
+
+app.post('/sync', requireCronSecret, handleRoute(async (req, res) => {
+  const result = await updateCompilationPlaylist();
+  res.json({ ok: true, ...result });
+}));
+
+app.get('/sync', requireCronSecret, handleRoute(async (req, res) => {
   const result = await updateCompilationPlaylist();
   res.json({ ok: true, ...result });
 }));

@@ -6,9 +6,9 @@ Nightly job that reads tracks from source Spotify playlists, stores the unique t
 
 - `GET /login` starts Spotify authorization.
 - `GET /callback` receives Spotify's authorization code. Add this exact URL to the Spotify app redirect URI allowlist.
-- `POST /cron/update` runs the whole sync. Send `Authorization: Bearer $CRON_SECRET`.
+- `POST /sync` runs the whole sync. Send `Authorization: Bearer $CRON_SECRET`.
 - `GET /auth/status` returns non-secret authorization status.
-- `GET /healthz` returns a basic health check.
+- `GET /status` returns a basic health check.
 
 Legacy endpoints still exist, but now require the cron secret:
 
@@ -85,7 +85,7 @@ The workflow calls:
 curl --fail --show-error --silent \
   --request POST \
   --header "Authorization: Bearer ${CRON_SECRET}" \
-  "${APP_CRON_URL}/cron/update"
+  "${APP_CRON_URL}/sync"
 ```
 
 ## Local Development

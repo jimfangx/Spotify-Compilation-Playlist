@@ -15,8 +15,11 @@ jobs:
           APP_CRON_URL: ${{ secrets.APP_CRON_URL }}
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
         run: |
+          APP_CRON_URL="${APP_CRON_URL%/}"
           test -n "${APP_CRON_URL}" || (echo "Missing repository secret: APP_CRON_URL" && exit 1)
           test -n "${CRON_SECRET}" || (echo "Missing repository secret: CRON_SECRET" && exit 1)
+          status="$(curl --output /dev/null --silent --write-out "%{http_code}" "${APP_CRON_URL}/auth/status")"
+          test "${status}" = "200" || (echo "App Engine did not return 200 from /auth/status. Deploy the updated app before running this workflow. HTTP status: ${status}" && exit 1)
 
       - name: Call playlist sync endpoint
         env:
@@ -27,4 +30,4 @@ jobs:
           curl --fail --show-error --silent \
             --request POST \
             --header "Authorization: Bearer ${CRON_SECRET}" \
-            "${APP_CRON_URL}/cron/update"
+            "${APP_CRON_URL}/sync"
