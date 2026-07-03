@@ -249,6 +249,10 @@ async function spotifyRequest(pathOrUrl, options = {}) {
     const error = new Error(payload?.error?.message || payload?.error || 'Spotify API request failed');
     error.status = response.status;
     error.spotifyPayload = payload;
+    error.spotifyRequest = {
+      method: options.method || 'GET',
+      path: pathOrUrl,
+    };
     throw error;
   }
 
@@ -304,7 +308,25 @@ async function fetchPlaylistTrackUris(playlistId) {
   let nextUrl = `/playlists/${playlistId}/items?limit=50&fields=items(track(uri,type)),next`;
 
   while (nextUrl) {
-    const page = await spotifyRequest(nextUrl);
+    let page;
+
+    try {
+      page = await spotifyRequest(nextUrl);
+    } catch (error) {
+      if (error.status === 404) {
+        console.warn(`Skipping source playlist ${playlistId}: ${error.message}`);
+        return {
+          playlistId,
+          skipped: true,
+          reason: error.message,
+          trackUris: [],
+        };
+      }
+
+      error.message = `Failed to read source playlist ${playlistId}: ${error.message}`;
+      throw error;
+    }
+
     const pageUris = (page.items || [])
       .map((item) => item.track)
       .filter((track) => track?.type === 'track' && track.uri && !track.uri.startsWith('spotify:local:'))
@@ -314,7 +336,11 @@ async function fetchPlaylistTrackUris(playlistId) {
     nextUrl = page.next;
   }
 
-  return trackUris;
+  return {
+    playlistId,
+    skipped: false,
+    trackUris,
+  };
 }
 
 async function collectTrackUris() {
@@ -328,16 +354,27 @@ async function collectTrackUris() {
 
   const seen = new Set();
 
-  for (const playlistId of playlistIds) {
-    const uris = await fetchPlaylistTrackUris(playlistId);
+  const skippedPlaylists = [];
 
-    for (const uri of uris) {
+  for (const playlistId of playlistIds) {
+    const result = await fetchPlaylistTrackUris(playlistId);
+
+    if (result.skipped) {
+      skippedPlaylists.push({
+        id: result.playlistId,
+        reason: result.reason,
+      });
+      continue;
+    }
+
+    for (const uri of result.trackUris) {
       seen.add(uri);
     }
   }
 
   return {
     playlistIds,
+    skippedPlaylists,
     trackUris: [...seen],
   };
 }
@@ -371,26 +408,54 @@ async function replaceDestinationPlaylist(trackUris) {
 
   const [firstChunk = [], ...remainingChunks] = chunk(trackUris, 100);
 
-  await spotifyRequest(`/playlists/${process.env.PLAYLISTID}/items`, {
-    method: 'PUT',
-    body: { uris: firstChunk },
-  });
-
-  for (const uris of remainingChunks) {
+  try {
     await spotifyRequest(`/playlists/${process.env.PLAYLISTID}/items`, {
-      method: 'POST',
-      body: { uris },
+      method: 'PUT',
+      body: { uris: firstChunk },
     });
+
+    for (const uris of remainingChunks) {
+      await spotifyRequest(`/playlists/${process.env.PLAYLISTID}/items`, {
+        method: 'POST',
+        body: { uris },
+      });
+    }
+  } catch (error) {
+    error.message = `Failed to update destination playlist ${process.env.PLAYLISTID}: ${error.message}`;
+    throw error;
   }
 }
 
+function routeErrorPayload(error) {
+  const payload = {
+    error: error.message || 'Unexpected error',
+    reauthorize: error.spotifyError === 'invalid_grant' ? '/login' : undefined,
+  };
+
+  if (error.spotifyRequest) {
+    payload.spotifyRequest = error.spotifyRequest;
+  }
+
+  if (error.spotifyPayload) {
+    payload.spotifyPayload = error.spotifyPayload;
+  }
+
+  return payload;
+}
+
+async function handleRouteError(error, res) {
+  console.error(error);
+  res.status(error.status || 500).json(routeErrorPayload(error));
+}
+
 async function updateCompilationPlaylist() {
-  const { playlistIds, trackUris } = await collectTrackUris();
+  const { playlistIds, skippedPlaylists, trackUris } = await collectTrackUris();
   await persistTrackUris(trackUris);
   await replaceDestinationPlaylist(trackUris);
 
   return {
     sourcePlaylists: playlistIds.length,
+    skippedSourcePlaylists: skippedPlaylists,
     tracks: trackUris.length,
     destinationPlaylistId: process.env.PLAYLISTID,
   };
@@ -402,11 +467,7 @@ function handleRoute(fn) {
       await mongoClient.connect();
       await fn(req, res);
     } catch (error) {
-      console.error(error);
-      res.status(error.status || 500).json({
-        error: error.message || 'Unexpected error',
-        reauthorize: error.spotifyError === 'invalid_grant' ? '/login' : undefined,
-      });
+      await handleRouteError(error, res);
     }
   };
 }
@@ -506,10 +567,15 @@ app.get('/refresh_token', requireCronSecret, handleRoute(async (req, res) => {
 }));
 
 app.get('/pull_songs', requireCronSecret, handleRoute(async (req, res) => {
-  const { playlistIds, trackUris } = await collectTrackUris();
+  const { playlistIds, skippedPlaylists, trackUris } = await collectTrackUris();
   await persistTrackUris(trackUris);
 
-  res.json({ ok: true, sourcePlaylists: playlistIds.length, tracks: trackUris.length });
+  res.json({
+    ok: true,
+    sourcePlaylists: playlistIds.length,
+    skippedSourcePlaylists: skippedPlaylists,
+    tracks: trackUris.length,
+  });
 }));
 
 app.get('/update_playlist', requireCronSecret, handleRoute(async (req, res) => {
