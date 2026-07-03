@@ -10,11 +10,20 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
+      - name: Validate required secrets
+        env:
+          APP_CRON_URL: ${{ secrets.APP_CRON_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          test -n "${APP_CRON_URL}" || (echo "Missing repository secret: APP_CRON_URL" && exit 1)
+          test -n "${CRON_SECRET}" || (echo "Missing repository secret: CRON_SECRET" && exit 1)
+
       - name: Call playlist sync endpoint
         env:
           APP_CRON_URL: ${{ secrets.APP_CRON_URL }}
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
         run: |
+          APP_CRON_URL="${APP_CRON_URL%/}"
           curl --fail --show-error --silent \
             --request POST \
             --header "Authorization: Bearer ${CRON_SECRET}" \
